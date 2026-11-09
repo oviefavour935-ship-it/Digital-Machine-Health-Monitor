@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Digital Twin Generator Dashboard</title>
+  
+  <!-- Static Libraries -->
+  <script src="/static/tailwindcss.js"></script>
+  <script src="/static/chart.js"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              red: '#ef4444',
+              orange: '#f97316',
+              yellow: '#eab308',
+              green: '#10b981',
+              blue: '#3b82f6',
+              purple: '#a855f7',
+              bgDark: '#121212',
+              cardDark: '#1e1e1e',
+              cardBorder: '#2d2d2d'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  
+  <style>
+    body {
+      background-color: #121212;
+      color: #e5e7eb;
+    }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #18181b; }
+    ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 4px; }
+
+    .gauge-arc {
+      transition: stroke-dashoffset 0.5s ease-out;
+    }
+  </style>
+</head>
+<body class="p-4 md:p-6 font-sans relative">
+
+  <!-- Floating Toast Notification Overlay (Top Right) -->
+  <div id="toast-container" class="fixed top-5 right-5 z-50 flex flex-col space-y-3 max-w-sm w-full pointer-events-none"></div>
+
+  <div class="max-w-[1600px] mx-auto space-y-4">
+    
+    <!-- Top Header Bar -->
+    <div class="flex flex-col md:flex-row justify-between items-center bg-brand-cardDark p-4 rounded-lg border border-brand-cardBorder shadow-lg gap-4">
+      <div class="flex items-center space-x-3">
+        <div class="w-3 h-3 rounded-full bg-brand-green animate-pulse"></div>
+        <div>
+          <h1 class="text-xl font-bold tracking-wide text-white">Digital Machine Health Dashboard</h1>
+          <p class="text-xs text-zinc-400">Real-Time Telemetry & Operational Control</p>
+        </div>
+      </div>
+
+      <div class="flex items-center space-x-3">
+        <!-- Audio Mute/Unmute Toggle -->
+        <button id="audio-toggle-btn" onclick="toggleAudioMute()" class="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-3 py-1.5 rounded font-bold text-xs transition flex items-center gap-1.5">
+          <span id="audio-icon">🔊</span> <span id="audio-text">Audio Alerts Enabled</span>
+        </button>
+
+        <span id="status-badge" class="px-3 py-1 text-xs font-bold rounded bg-zinc-800 text-zinc-300 border border-zinc-700">
+          CONNECTING...
+        </span>
+
+        <!-- ML Model Training Action -->
+        <button onclick="trainMLModel()" class="bg-brand-purple hover:bg-purple-600 text-white px-4 py-1.5 rounded font-bold text-xs transition shadow">
+          Train ML Model
+        </button>
+
+        <!-- Emergency Control Button in Header -->
+        <button 
+          id="btn-manual-override"
+          onclick="triggerManualOverride()" 
+          class="py-1.5 px-3 bg-rose-950/80 hover:bg-rose-900 text-rose-300 hover:text-white font-mono text-xs font-bold rounded border border-rose-800 hover:border-rose-600 transition-all duration-200 flex items-center gap-1.5 shadow-[0_0_15px_rgba(244,63,94,0.15)] active:scale-95">
+          <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/>
+          </svg>
+          MANUAL SHUTDOWN
+        </button>
+      </div>
+    </div>
+
+    <!-- Main Dynamic Metrics Grid -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      
+      <!-- 1. Health Index KPI with Horizontal Visual Bar -->
+      <div class="bg-brand-cardDark p-4 rounded-lg border border-brand-cardBorder flex flex-col justify-between items-center text-center shadow-md h-60">
+        <div class="flex justify-between items-center w-full">
+          <span class="text-xs font-bold uppercase tracking-wider text-zinc-400">Health Index</span>
+          <span id="card-session" class="text-[10px] text-zinc-500 font-mono">Session: Off</span>
+        </div>
+        
+        <div class="w-full my-auto flex flex-col items-center justify-center space-y-3">
+          <h2 id="card-health" class="text-6xl font-black text-brand-green tracking-tight leading-none">100%</h2>
+          
+          <div class="w-full bg-zinc-800 h-3.5 rounded-full overflow-hidden p-0.5 border border-zinc-700/60">
+            <div id="health-bar" class="bg-brand-green h-full rounded-full transition-all duration-500 shadow-[0_0_12px_rgba(16,185,129,0.5)]" style="width: 100%;"></div>
+          </div>
+        </div>
+
+        <span class="text-[11px] text-zinc-400 font-medium">Machine Condition Operational</span>
+      </div>
+
+      <!-- 2. Engine Speed Gauge -->
+      <div class="bg-brand-cardDark p-4 rounded-lg border border-brand-cardBorder flex flex-col justify-between items-center text-center shadow-md h-60 relative">
+        <div class="flex justify-between items-center w-full">
+          <span class="text-xs font-bold uppercase tracking-wider text-brand-blue">Engine Speed</span>
+          <span class="text-[10px] text-zinc-500 font-mono">0-1500 RPM</span>
+        </div>
+        
+        <div class="relative w-full h-36 flex items-center justify-center my-auto">
+          <svg class="w-full h-full overflow-visible" viewBox="0 0 100 55">
+            <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="#27272a" stroke-width="10" stroke-linecap="round" />
+            <path id="rpm-arc" class="gauge-arc" d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="#3b82f6" stroke-width="10" stroke-linecap="round" stroke-dasharray="125.66" stroke-dashoffset="125.66" />
+          </svg>
+          <div class="absolute bottom-2 inset-x-0 flex flex-col items-center justify-center">
+            <span id="card-rpm" class="text-3xl font-black text-brand-blue leading-none">0</span>
+            <span class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mt-1">RPM</span>
+          </div>
+        </div>
+
+        <span class="text-[11px] text-zinc-400 font-medium">Target Range: <strong class="text-white">700 - 1200 RPM</strong></span>
+      </div>
+
+      <!-- 3. Coolant Temp Gauge -->
+      <div class="bg-brand-cardDark p-4 rounded-lg border border-brand-cardBorder flex flex-col justify-between items-center text-center shadow-md h-60">
+        <div class="flex justify-between items-center w-full">
+          <span class="text-xs font-bold uppercase tracking-wider text-brand-yellow">Coolant Temp</span>
+          <span id="card-temp-rate" class="text-[10px] text-zinc-400 font-mono">0.0 °C/min</span>
+        </div>
+
+        <div class="flex items-center justify-center my-auto space-x-4 w-full">
+          <div class="relative w-8 h-28 flex justify-center items-center">
+            <svg class="w-full h-full" viewBox="0 0 40 110">
+              <rect x="14" y="5" width="12" height="80" rx="6" fill="#2d2d2d" stroke="#3f3f46" stroke-width="2"/>
+              <circle cx="20" cy="92" r="14" fill="#2d2d2d" stroke="#3f3f46" stroke-width="2"/>
+              <rect id="thermo-liquid" x="16" y="75" width="8" height="10" rx="4" fill="#eab308" class="transition-all duration-500"/>
+              <circle cx="20" cy="92" r="11" fill="#eab308"/>
+            </svg>
+          </div>
+          <div class="text-left">
+            <h2 id="card-temp" class="text-4xl font-black text-brand-yellow tracking-tight">0.0<span class="text-sm font-normal text-zinc-400"> °C</span></h2>
+          </div>
+        </div>
+
+        <span class="text-[11px] text-zinc-400 font-medium">Max Limit: <strong class="text-brand-orange">95.0 °C</strong></span>
+      </div>
+
+      <!-- 4. Fuel Level Gauge -->
+      <div class="bg-brand-cardDark p-4 rounded-lg border border-brand-cardBorder flex flex-col justify-between items-center text-center shadow-md h-60 relative">
+        <div class="flex justify-between items-center w-full">
+          <span class="text-xs font-bold uppercase tracking-wider text-brand-red">Fuel Reserve</span>
+          <span id="card-rufl" class="text-[10px] text-zinc-400 font-mono">RUFL: -- mins</span>
+        </div>
+        
+        <div class="relative my-auto flex items-center justify-center">
+          <div class="relative w-28 h-28 rounded-full bg-zinc-800 border-2 border-zinc-700 overflow-hidden flex items-center justify-center shadow-inner">
+            <div id="fuel-liquid-fill" class="absolute bottom-0 w-full bg-brand-red transition-all duration-500" style="height: 100%;"></div>
+            <span id="card-fuel" class="relative z-10 text-3xl font-black text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] tracking-tight">100%</span>
+          </div>
+        </div>
+
+        <span class="text-[11px] text-zinc-400 font-medium">Auto-Cutoff: <strong class="text-brand-red">5% Fuel</strong></span>
+      </div>
+
+      <!-- 5. 3D Vibration Card -->
+      <div class="bg-brand-cardDark p-4 rounded-lg border border-brand-cardBorder flex flex-col justify-between shadow-md h-60">
+        <div class="flex justify-between items-center w-full">
+          <span class="text-xs font-bold uppercase tracking-wider text-brand-purple">3D Vibration</span>
+          <span class="text-[10px] text-zinc-500 font-mono">3-Axis</span>
+        </div>
+
+        <div class="text-center my-1">
+          <h2 id="card-vib" class="text-4xl font-black text-brand-purple tracking-tight leading-none">0.00<span class="text-xs font-normal text-zinc-400"> g</span></h2>
+          <span class="text-[9px] uppercase tracking-wider text-zinc-500 font-semibold">Vector Displacement</span>
+        </div>
+
+        <div class="w-full bg-zinc-900/80 p-2.5 rounded border border-zinc-800/80 space-y-1.5 font-mono text-[11px]">
+          <div class="flex justify-between items-center">
+            <span class="text-zinc-400 font-bold">X-Axis:</span>
+            <div class="w-20 bg-zinc-800 h-1.5 rounded-full overflow-hidden mx-2">
+              <div id="vib-x-bar" class="bg-brand-purple h-full transition-all duration-300" style="width: 20%;"></div>
+            </div>
+            <span id="vib-x-val" class="text-white font-bold w-12 text-right">0.00g</span>
+          </div>
+
+          <div class="flex justify-between items-center">
+            <span class="text-zinc-400 font-bold">Y-Axis:</span>
+            <div class="w-20 bg-zinc-800 h-1.5 rounded-full overflow-hidden mx-2">
+              <div id="vib-y-bar" class="bg-brand-purple h-full transition-all duration-300" style="width: 15%;"></div>
+            </div>
+            <span id="vib-y-val" class="text-white font-bold w-12 text-right">0.00g</span>
+          </div>
+
+          <div class="flex justify-between items-center">
+            <span class="text-zinc-400 font-bold">Z-Axis:</span>
+            <div class="w-20 bg-zinc-800 h-1.5 rounded-full overflow-hidden mx-2">
+              <div id="vib-z-bar" class="bg-brand-purple h-full transition-all duration-300" style="width: 25%;"></div>
+            </div>
+            <span id="vib-z-val" class="text-white font-bold w-12 text-right">0.00g</span>
+          </div>
+        </div>
+
+        <span class="text-[10px] text-zinc-500 text-center font-medium">Tri-Axial Accelerometer</span>
+      </div>
+
+    </div>
+
+    <!-- Live Telemetry Visualizer & Alarm Diagnostics -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      
+      <div class="lg:col-span-2 bg-brand-cardDark p-4 rounded-lg border border-brand-cardBorder shadow-md">
+        <div class="flex justify-between items-center mb-2">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-white">Live Digital Twin Metrics Stream</h3>
+          <div class="flex space-x-3 text-[10px] font-bold">
+            <span class="text-brand-blue">■ RPM</span>
+            <span class="text-brand-yellow">■ Temp</span>
+            <span class="text-brand-red">■ Fuel</span>
+            <span class="text-brand-purple">■ Vibration</span>
+          </div>
+        </div>
+        <div class="h-64 w-full">
+          <canvas id="telemetryChart"></canvas>
+        </div>
+      </div>
+
+      <div class="bg-brand-cardDark p-4 rounded-lg border border-brand-cardBorder flex flex-col justify-between shadow-md">
+        <div>
+          <h3 class="text-xs font-bold uppercase tracking-wider text-white mb-3">Active Operational Alarms</h3>
+          <div id="alarm-container" class="space-y-2 max-h-48 overflow-y-auto">
+            <div class="p-3 bg-zinc-900 rounded border border-zinc-800 text-xs text-zinc-500 font-mono">
+              System operating within normal parameters.
+            </div>
+          </div>
+        </div>
+        
+        <div class="mt-4 pt-3 border-t border-zinc-800 space-y-2">
+          <div class="flex justify-between text-xs text-zinc-400 font-mono">
+            <span>ML Trained: <strong id="ml-status" class="text-white">False</strong></span>
+            <span>Anomaly Score: <strong id="ml-score" class="text-brand-yellow">0.0</strong></span>
+          </div>
+          <div class="bg-zinc-900 p-2.5 rounded border border-zinc-800 text-center">
+            <span class="text-[9px] text-zinc-500 uppercase tracking-widest block font-bold">Root Cause Diagnostic</span>
+            <span id="ml-cause" class="text-xs text-brand-blue font-bold">Normal Baseline Operation</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Session History Table -->
+    <div class="bg-brand-cardDark p-4 rounded-lg border border-brand-cardBorder shadow-md">
+      <div class="flex justify-between items-center mb-3">
+        <div>
+          <h3 class="text-xs font-bold uppercase tracking-wider text-white">Historical Operating Sessions</h3>
+          <p class="text-[11px] text-zinc-400">Select any log record to open deep telemetry analytics</p>
+        </div>
+        <button onclick="fetchSessionHistory()" class="text-xs bg-zinc-800 hover:bg-zinc-700 text-brand-blue px-3 py-1 rounded border border-zinc-700 font-bold transition">
+          Refresh List
+        </button>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs text-zinc-300">
+          <thead class="bg-zinc-900 uppercase text-zinc-400 text-[10px] tracking-wider border-b border-zinc-800">
+            <tr>
+              <th class="p-2.5">Session</th>
+              <th class="p-2.5">Start Time</th>
+              <th class="p-2.5">Runtime</th>
+              <th class="p-2.5">Avg RPM</th>
+              <th class="p-2.5">Peak Temp</th>
+              <th class="p-2.5">Avg 3D Vib</th>
+              <th class="p-2.5">Fuel Burned</th>
+              <th class="p-2.5 text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody id="session-table-body" class="divide-y divide-zinc-800/60 font-mono">
+            <tr>
+              <td colspan="8" class="p-4 text-center text-zinc-500">Loading session history...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Session Inspection Modal with CSV/JSON Data Export Buttons -->
+  <div id="session-modal" class="hidden fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+    <div class="bg-brand-cardDark border border-brand-cardBorder rounded-lg max-w-4xl w-full p-6 space-y-4 shadow-2xl">
+      <div class="flex justify-between items-center border-b border-zinc-800 pb-3">
+        <div>
+          <h3 id="modal-title" class="text-base font-bold text-brand-blue">Session Details</h3>
+          <p id="modal-subtitle" class="text-xs text-zinc-400 font-mono"></p>
+        </div>
+        <button onclick="closeModal()" class="text-zinc-400 hover:text-white font-bold text-xl">&times;</button>
+      </div>
+      
+      <div id="modal-content" class="text-xs space-y-4 max-h-[75vh] overflow-y-auto pr-1">
+        <p class="text-zinc-500">Fetching session logs...</p>
+      </div>
+
+      <div class="flex justify-between items-center pt-3 border-t border-zinc-800">
+        <div id="export-controls" class="flex space-x-2">
+          <button onclick="exportSessionData('csv')" class="bg-zinc-800 hover:bg-zinc-700 text-brand-green border border-zinc-700 px-3 py-1.5 rounded text-xs font-bold transition flex items-center gap-1">
+            <span>📥 Export CSV</span>
+          </button>
+          <button onclick="exportSessionData('json')" class="bg-zinc-800 hover:bg-zinc-700 text-brand-yellow border border-zinc-700 px-3 py-1.5 rounded text-xs font-bold transition flex items-center gap-1">
+            <span>📄 Export JSON</span>
+          </button>
+        </div>
+
+        <button onclick="closeModal()" class="bg-zinc-800 hover:bg-zinc-700 text-white px-5 py-1.5 rounded text-xs font-bold transition">
+          Close Window
+        </button>
+      </div>
+    </div>
+  </div>
+
+<script>
+    const WS_PROTOCOL = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const WS_URL = `${WS_PROTOCOL}//${window.location.host}/ws/twin`;
+    const API_BASE = `${window.location.protocol}//${window.location.host}`;  
+
+    let currentInspectedSession = null;
+    let socket = null;
+    let modalChartInstance = null;
+    let wasSessionActive = false;
+
+    // Toast & Audio Synthesizer State
+    let audioEnabled = true;
+    let audioCtx = null;
+    let activeAlarmTypes = new Set();
+
+    const ctx = document.getElementById('telemetryChart').getContext('2d');
+    const chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          { label: 'RPM', data: [], borderColor: '#3b82f6', borderWidth: 2, pointRadius: 0, yAxisID: 'yRPM' },
+          { label: 'Coolant Temp (°C)', data: [], borderColor: '#eab308', borderWidth: 2, pointRadius: 0, yAxisID: 'yStandard' },
+          { label: 'Fuel Level (%)', data: [], borderColor: '#ef4444', borderWidth: 2, pointRadius: 0, yAxisID: 'yStandard' },
+          { label: '3D Vib Delta (g)', data: [], borderColor: '#a855f7', borderWidth: 2, pointRadius: 0, yAxisID: 'yStandard' }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        scales: {
+          x: { ticks: { color: '#71717a' }, grid: { color: '#27272a' } },
+          yStandard: { type: 'linear', position: 'left', min: 0, max: 110, ticks: { color: '#71717a' }, grid: { color: '#27272a' } },
+          yRPM: { type: 'linear', position: 'right', min: 0, max: 2000, ticks: { color: '#3b82f6' }, grid: { drawOnChartArea: false } }
+        },
+        plugins: { legend: { display: false } }
+      }
+    });
+
+    // --- Web Audio Synthesizer Engine ---
+    function playAlarmSound(type) {
+      if (!audioEnabled) return;
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      if (type === 'CRITICAL') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(880, audioCtx.currentTime); // A5 tone
+        osc.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.3);
+        gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.3);
+      } else if (type === 'WARNING') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5 tone
+        gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.2);
+      }
+    }
+
+    function toggleAudioMute() {
+      audioEnabled = !audioEnabled;
+      document.getElementById('audio-icon').innerText = audioEnabled ? "🔊" : "🔇";
+      document.getElementById('audio-text').innerText = audioEnabled ? "Audio Alerts Enabled" : "Audio Alerts Muted";
+      document.getElementById('audio-toggle-btn').className = audioEnabled 
+        ? "bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-3 py-1.5 rounded font-bold text-xs transition flex items-center gap-1.5"
+        : "bg-rose-950/60 hover:bg-rose-900/60 text-rose-300 border border-rose-800 px-3 py-1.5 rounded font-bold text-xs transition flex items-center gap-1.5";
+    }
+
+    // --- Dynamic Toast Generator ---
+    function showToast(message, severity = 'WARNING', duration = 4000) {
+      // CRITICAL GUARD: Never display toasts if status badge shows STOPPED or OFFLINE
+      const statusBadge = document.getElementById('status-badge');
+      const currentStatus = statusBadge ? statusBadge.innerText.trim() : '';
+      if (currentStatus === 'STOPPED' || currentStatus === 'OFFLINE') {
+        return;
+      }
+
+      const container = document.getElementById('toast-container');
+      if (!container) return;
+      const toast = document.createElement('div');
+      
+      const isCrit = severity === 'CRITICAL';
+      const borderCol = isCrit ? 'border-brand-red' : 'border-brand-yellow';
+      const bgCol = isCrit ? 'bg-rose-950/90 text-rose-100' : 'bg-amber-950/90 text-amber-100';
+      const badgeCol = isCrit ? 'bg-brand-red text-white' : 'bg-brand-yellow text-black';
+
+      toast.className = `pointer-events-auto flex items-center justify-between p-3.5 rounded-lg border-l-4 ${borderCol} ${bgCol} shadow-2xl backdrop-blur-md transform transition-all duration-300 translate-x-full font-mono text-xs`;
+      
+      toast.innerHTML = `
+        <div class="flex items-center space-x-2.5">
+          <span class="px-1.5 py-0.5 rounded text-[9px] font-black tracking-wider uppercase ${badgeCol}">${severity}</span>
+          <span class="font-medium">${message}</span>
+        </div>
+        <button onclick="this.parentElement.remove()" class="ml-3 text-zinc-400 hover:text-white font-bold text-sm">&times;</button>
+      `;
+
+      container.appendChild(toast);
+      
+      requestAnimationFrame(() => {
+        toast.classList.remove('translate-x-full');
+      });
+
+      playAlarmSound(severity);
+
+      setTimeout(() => {
+        toast.classList.add('translate-x-full', 'opacity-0');
+        setTimeout(() => toast.remove(), 300);
+      }, duration);
+    }
+
+    // --- Threshold Inspector & Alarm Fire Control ---
+    function evaluateThresholds(data) {
+      if (!data) return;
+
+      // STRICT GUARD: Immediately abort if state is STOPPED, OFFLINE, or Session is Off
+      const isStopped = data.status === "STOPPED" || data.status === "OFFLINE";
+      const isSessionOff = !data.active_session_id || data.active_session_id === "Off";
+
+      if (isStopped || isSessionOff) {
+        activeAlarmTypes.clear();
+        // Wipe any active toasts currently visible on screen
+        const container = document.getElementById('toast-container');
+        if (container) container.innerHTML = '';
+        return; // Exit early — do NOT evaluate alarms array
+      }
+
+      const alarms = data.alarms || [];
+
+      alarms.forEach(alarm => {
+        const alarmKey = `${alarm.severity}_${alarm.msg}`;
+        if (!activeAlarmTypes.has(alarmKey)) {
+          activeAlarmTypes.add(alarmKey);
+          showToast(alarm.msg, alarm.severity);
+          
+          // 10 second cooldown before allowing re-notification for the same alarm
+          setTimeout(() => activeAlarmTypes.delete(alarmKey), 10000);
+        }
+      });
+    }
+    // --- WebSocket Pipeline ---
+    function connectWebSocket() {
+      socket = new WebSocket(WS_URL);
+
+      socket.onopen = () => {
+        const badge = document.getElementById('status-badge');
+        if (badge) {
+          badge.innerText = "ONLINE";
+          badge.className = "px-3 py-1 text-xs font-bold rounded bg-emerald-950 text-emerald-400 border border-emerald-800";
+        }
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          // Handle automatic session termination event
+          if (data.type === "SESSION_TERMINATED") {
+            const cardSession = document.getElementById('card-session');
+            if (cardSession) cardSession.innerText = "Session: Off";
+            
+            // Clear all active alerts and clear toast notifications from DOM
+            activeAlarmTypes.clear();
+            const container = document.getElementById('toast-container');
+            if (container) container.innerHTML = '';
+
+            fetchSessionHistory(); // Refresh session table from database immediately
+            return;
+          }
+
+          // Standard telemetry stream update
+          updateDashboard(data);
+          evaluateThresholds(data);
+
+          // Dynamic reset if active session drops to None/Off in normal telemetry payload
+          if (data.active_session_id === "Off" || !data.active_session_id) {
+            const cardSession = document.getElementById('card-session');
+            if (cardSession) cardSession.innerText = "Session: Off";
+          }
+        } catch (err) {
+          console.error("Error parsing WebSocket payload:", err);
+        }
+      };
+
+      socket.onclose = () => {
+        const badge = document.getElementById('status-badge');
+        if (badge) {
+          badge.innerText = "OFFLINE";
+          badge.className = "px-3 py-1 text-xs font-bold rounded bg-rose-950 text-rose-400 border border-rose-800";
+        }
+        // Clear active alerts when socket disconnects
+        activeAlarmTypes.clear();
+        setTimeout(connectWebSocket, 3000);
+      };
+    }
+
+    function updateDashboard(data) {
+      if (!data) return;
+      const telem = data.telemetry || {};
+
+      if (data.status) {
+        const badge = document.getElementById('status-badge');
+        if (badge) {
+          badge.innerText = data.status;
+          if (data.status === "NORMAL") badge.className = "px-3 py-1 text-xs font-bold rounded bg-emerald-950 text-emerald-400 border border-emerald-800";
+          else if (data.status === "STOPPED") badge.className = "px-3 py-1 text-xs font-bold rounded bg-zinc-800 text-zinc-300 border border-zinc-700";
+          else if (data.status === "WARNING") badge.className = "px-3 py-1 text-xs font-bold rounded bg-amber-950 text-amber-400 border border-amber-800";
+          else if (data.status === "CRITICAL") badge.className = "px-3 py-1 text-xs font-bold rounded bg-rose-950 text-rose-400 border border-rose-800";
+        }
+      }
+
+      // 1. Health Index Bar
+      const healthVal = data.health_index ?? 100;
+      const cardHealth = document.getElementById('card-health');
+      if (cardHealth) cardHealth.innerText = `${healthVal}%`;
+      const healthBar = document.getElementById('health-bar');
+      if (healthBar) {
+        healthBar.style.width = `${healthVal}%`;
+        if (healthVal < 50) {
+          healthBar.className = "bg-brand-red h-full rounded-full transition-all duration-500 shadow-[0_0_12px_rgba(239,68,68,0.5)]";
+        } else if (healthVal < 80) {
+          healthBar.className = "bg-brand-yellow h-full rounded-full transition-all duration-500 shadow-[0_0_12px_rgba(234,179,8,0.5)]";
+        } else {
+          healthBar.className = "bg-brand-green h-full rounded-full transition-all duration-500 shadow-[0_0_12px_rgba(16,185,129,0.5)]";
+        }
+      }
+
+      // 2. RPM Gauge
+      const rpmVal = telem.rpm ?? 0;
+      const cardRpm = document.getElementById('card-rpm');
+      if (cardRpm) cardRpm.innerText = rpmVal;
+      const rpmFraction = Math.min(1, Math.max(0, rpmVal / 1500));
+      const rpmArc = document.getElementById('rpm-arc');
+      if (rpmArc) rpmArc.style.strokeDashoffset = 125.66 * (1 - rpmFraction);
+
+      const cardSession = document.getElementById('card-session');
+      if (rpmVal === 0) {
+        if (cardSession) cardSession.innerText = "Session: Off";
+        if (wasSessionActive) {
+          fetchSessionHistory();
+          wasSessionActive = false;
+        }
+      } else {
+        if (cardSession) cardSession.innerText = `Session: ${data.active_session_id || 'Off'}`;
+        if (data.active_session_id && data.active_session_id !== 'Off') {
+          wasSessionActive = true;
+        }
+      }
+
+      // 3. Coolant Temperature Thermometer
+      const tempVal = telem.coolant_temp ?? 0.0;
+      const thermoLiquid = document.getElementById('thermo-liquid');
+      if (thermoLiquid) {
+        const fillHeight = Math.min(70, Math.max(0, (tempVal / 100) * 70));
+        thermoLiquid.setAttribute('height', Math.max(10, fillHeight));
+        thermoLiquid.setAttribute('y', 75 - fillHeight);
+      }
+      const cardTemp = document.getElementById('card-temp');
+      if (cardTemp) cardTemp.innerHTML = `${tempVal.toFixed(1)}<span class="text-sm font-normal text-zinc-400"> °C</span>`;
+      const cardTempRate = document.getElementById('card-temp-rate');
+      if (cardTempRate) cardTempRate.innerText = `${data.temp_rate_of_change ?? 0.0} °C/min`;
+
+      // 4. Fuel Circular Fill
+      const fuelVal = telem.fuel_level ?? 100;
+      const cardFuel = document.getElementById('card-fuel');
+      if (cardFuel) cardFuel.innerText = `${fuelVal}%`;
+      const fuelLiquid = document.getElementById('fuel-liquid-fill');
+      if (fuelLiquid) fuelLiquid.style.height = `${fuelVal}%`;
+      const cardRufl = document.getElementById('card-rufl');
+      if (cardRufl) cardRufl.innerText = `RUFL: ${data.rufl_minutes ?? '--'} mins`;
+
+      // 5. 3D Vibration Card
+      const totalVib = data.vibration_delta_g ?? 0.0;
+      const cardVib = document.getElementById('card-vib');
+      if (cardVib) cardVib.innerHTML = `${totalVib}<span class="text-xs font-normal text-zinc-400"> g</span>`;
+
+      const xVal = (totalVib * 0.55).toFixed(2);
+      const yVal = (totalVib * 0.35).toFixed(2);
+      const zVal = (totalVib * 0.75).toFixed(2);
+
+      const vxVal = document.getElementById('vib-x-val');
+      const vyVal = document.getElementById('vib-y-val');
+      const vzVal = document.getElementById('vib-z-val');
+      if (vxVal) vxVal.innerText = `${xVal}g`;
+      if (vyVal) vyVal.innerText = `${yVal}g`;
+      if (vzVal) vzVal.innerText = `${zVal}g`;
+
+      const vxBar = document.getElementById('vib-x-bar');
+      const vyBar = document.getElementById('vib-y-bar');
+      const vzBar = document.getElementById('vib-z-bar');
+      if (vxBar) vxBar.style.width = `${Math.min(100, xVal * 50)}%`;
+      if (vyBar) vyBar.style.width = `${Math.min(100, yVal * 50)}%`;
+      if (vzBar) vzBar.style.width = `${Math.min(100, zVal * 50)}%`;
+
+      const mlStatus = document.getElementById('ml-status');
+      const mlScore = document.getElementById('ml-score');
+      const mlCause = document.getElementById('ml-cause');
+      if (mlStatus) mlStatus.innerText = data.ml_trained ? "True" : "False";
+      if (mlScore) mlScore.innerText = data.anomaly_score ?? 0.0;
+      if (mlCause) mlCause.innerText = data.anomaly_attribution || "Normal Baseline Operation";
+
+      // Chart Streaming
+      const timeLabel = new Date().toLocaleTimeString();
+      chart.data.labels.push(timeLabel);
+      chart.data.datasets[0].data.push(telem.rpm ?? 0);
+      chart.data.datasets[1].data.push(telem.coolant_temp ?? 0);
+      chart.data.datasets[2].data.push(telem.fuel_level ?? 0);
+      chart.data.datasets[3].data.push(totalVib);
+
+      if (chart.data.labels.length > 30) {
+        chart.data.labels.shift();
+        chart.data.datasets.forEach(ds => ds.data.shift());
+      }
+      chart.update();
+
+      // Alarms Panel
+      const alarmContainer = document.getElementById('alarm-container');
+      if (alarmContainer) {
+        alarmContainer.innerHTML = "";
+        
+        // Show inactive message if session is Off or state is STOPPED/OFFLINE
+        const isInactive = data.status === "STOPPED" || data.status === "OFFLINE" || !data.active_session_id || data.active_session_id === "Off";
+
+        if (isInactive || !data.alarms || data.alarms.length === 0) {
+          alarmContainer.innerHTML = `<div class="p-3 bg-zinc-900 rounded border border-zinc-800 text-xs text-zinc-500 font-mono">${isInactive ? 'Session inactive. Telemetry monitoring paused.' : 'System operating within normal parameters.'}</div>`;
+        } else {
+          data.alarms.forEach(alarm => {
+            const isCrit = alarm.severity === "CRITICAL";
+            const bg = isCrit ? "bg-rose-950/60 border-rose-800 text-rose-300" : "bg-amber-950/60 border-amber-800 text-amber-300";
+            alarmContainer.innerHTML += `
+              <div class="p-2.5 rounded border text-xs font-mono ${bg}">
+                <span class="font-bold uppercase">[${alarm.severity}]</span> ${alarm.msg}
+              </div>
+            `;
+          });
+        }
+      }
+    }
+
+    async function trainMLModel() {
+      try {
+        const res = await fetch(`${API_BASE}/api/ml/train`, { method: "POST" });
+        const resData = await res.json();
+        alert(resData.trained ? `ML Model Trained successfully using ${resData.data_points_used} data points!` : `Training Deferred: ${resData.data_points_used}/20 required samples accumulated.`);
+      } catch (err) {
+        alert(`Failed to trigger ML training: ${err}`);
+      }
+    }
+
+    async function triggerManualOverride() {
+      const confirmed = confirm("WARNING: Initiate emergency manual override shutdown sequence?");
+      if (!confirmed) return;
+
+      const btn = document.getElementById('btn-manual-override');
+      const originalText = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerText = "ISSUING SHUTDOWN...";
+      }
+
+      try {
+        const response = await fetch(`${API_BASE}/api/control/override`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'MANUAL_SHUTDOWN',
+            timestamp: new Date().toISOString(),
+            initiated_by: 'web_dashboard'
+          })
+        });
+
+        const resData = await response.json();
+
+        if (response.ok && resData.status === 'success') {
+          alert("Manual override payload acknowledged! Initiating sequence.");
+        } else {
+          alert(`Override Failed: ${resData.message || 'Unknown server error'}`);
+        }
+
+        // Fixed reference from 'ws' to 'socket'
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({
+            event: 'MANUAL_OVERRIDE',
+            command: 'STOP',
+            timestamp: new Date().toISOString()
+          }));
+        }
+
+      } catch (err) {
+        console.error("Failed to execute manual override:", err);
+        alert(`Emergency Override Error: ${err.message}`);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = originalText;
+        }
+      }
+    }
+
+    async function fetchSessionHistory() {
+      try {
+        const res = await fetch(`${API_BASE}/api/history/sessions`);
+        const data = await res.json();
+        const tbody = document.getElementById("session-table-body");
+        if (!tbody) return;
+        tbody.innerHTML = "";
+
+        if (!data.sessions || data.sessions.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-zinc-500">No recorded sessions yet. Start generator to begin logging.</td></tr>`;
+          return;
+        }
+
+        data.sessions.forEach(s => {
+          const durationMins = s.duration_seconds ? (s.duration_seconds / 60).toFixed(1) + " mins" : "Running...";
+          const startTime = s.start_time ? new Date(s.start_time).toLocaleTimeString() : "--:--";
+          
+          tbody.innerHTML += `
+            <tr class="hover:bg-zinc-800/50 transition cursor-pointer" onclick="inspectSession(${s.session_id})">
+              <td class="p-2.5 font-bold text-brand-blue">#${s.session_id}</td>
+              <td class="p-2.5">${startTime}</td>
+              <td class="p-2.5 text-brand-yellow font-semibold">${durationMins}</td>
+              <td class="p-2.5">${s.avg_rpm || 0} RPM</td>
+              <td class="p-2.5">${s.peak_temp || 0} °C</td>
+              <td class="p-2.5">${s.avg_delta_g || 0} g</td>
+              <td class="p-2.5 text-brand-red">${s.total_fuel_consumed || 0} Lit</td>
+              <td class="p-2.5 text-right">
+                <button onclick="event.stopPropagation(); inspectSession(${s.session_id})" class="text-[10px] bg-zinc-800 hover:bg-brand-blue hover:text-white text-brand-blue px-2.5 py-1 rounded border border-zinc-700 transition">
+                  Inspect
+                </button>
+              </td>
+            </tr>
+          `;
+        });
+      } catch (err) {
+        console.error("Failed to load session history:", err);
+      }
+    }
+
+    async function inspectSession(sessionId) {
+      const modal = document.getElementById('session-modal');
+      const title = document.getElementById('modal-title');
+      const subtitle = document.getElementById('modal-subtitle');
+      const content = document.getElementById('modal-content');
+      
+      if (title) title.innerText = `Session #${sessionId} Deep Diagnostics`;
+      if (subtitle) subtitle.innerText = "Loading timeline records...";
+      if (content) content.innerHTML = `<p class="text-zinc-500">Fetching detailed telemetry logs...</p>`;
+      if (modal) modal.classList.remove('hidden');
+
+      try {
+        const res = await fetch(`${API_BASE}/api/history/session/${sessionId}`);
+        const data = await res.json();
+
+        if (data.error) {
+          if (content) content.innerHTML = `<p class="text-rose-400 p-4 bg-rose-950/20 rounded border border-rose-800">${data.error}</p>`;
+          return;
+        }
+
+        currentInspectedSession = data;
+
+        const summary = data.session_summary;
+        if (subtitle) subtitle.innerText = `Logged on ${new Date(summary.start_time).toLocaleString()} | Duration: ${summary.duration_seconds}s`;
+
+        if (content) {
+          content.innerHTML = `
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 bg-zinc-900 p-3 rounded border border-zinc-800 font-mono">
+              <div><p class="text-zinc-500">Min Health Index</p><p class="text-brand-green font-bold text-base">${summary.min_health_index}%</p></div>
+              <div><p class="text-zinc-500">Avg Burn Rate</p><p class="text-brand-red font-bold text-base">${summary.avg_fuel_burn_rate} %/min</p></div>
+              <div><p class="text-zinc-500">Peak Temperature</p><p class="text-brand-yellow font-bold text-base">${summary.peak_temp} °C</p></div>
+              <div><p class="text-zinc-500">Logged Snapshots</p><p class="text-brand-blue font-bold text-base">${data.telemetry_count}</p></div>
+            </div>
+
+            <div class="bg-zinc-900 p-3 rounded border border-zinc-800">
+              <h4 class="text-xs font-bold text-zinc-300 uppercase mb-2">Session Telemetry Visual Trend</h4>
+              <div class="h-48">
+                <canvas id="modalChart"></canvas>
+              </div>
+            </div>
+
+            <h4 class="font-bold text-zinc-300 mt-3 uppercase text-[11px]">Telemetry Sequence Log</h4>
+            <div class="overflow-x-auto border border-zinc-800 rounded">
+              <table class="w-full text-left text-[11px] text-zinc-300 font-mono divide-y divide-zinc-800">
+                <thead class="bg-zinc-900 text-zinc-500 uppercase text-[9px]">
+                  <tr>
+                    <th class="p-2">Time</th>
+                    <th class="p-2">RPM</th>
+                    <th class="p-2">Temp</th>
+                    <th class="p-2">Fuel</th>
+                    <th class="p-2">3D Vib</th>
+                    <th class="p-2">Health</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-zinc-800/60 bg-zinc-950">
+                  ${data.logs.map(l => `
+                    <tr class="hover:bg-zinc-900">
+                      <td class="p-2">${new Date(l.timestamp).toLocaleTimeString()}</td>
+                      <td class="p-2 text-brand-blue">${l.rpm}</td>
+                      <td class="p-2 text-brand-yellow">${l.coolant_temp}°C</td>
+                      <td class="p-2 text-brand-red">${l.fuel_level}%</td>
+                      <td class="p-2 text-brand-purple">${l.vibration_delta_g}g</td>
+                      <td class="p-2 font-bold ${l.health_index < 70 ? 'text-brand-red' : 'text-brand-green'}">${l.health_index}%</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          `;
+        }
+
+        if (modalChartInstance) modalChartInstance.destroy();
+        const canvasEl = document.getElementById('modalChart');
+        if (canvasEl) {
+          const mCtx = canvasEl.getContext('2d');
+          modalChartInstance = new Chart(mCtx, {
+            type: 'line',
+            data: {
+              labels: data.logs.map(l => new Date(l.timestamp).toLocaleTimeString()),
+              datasets: [
+                { label: 'RPM', data: data.logs.map(l => l.rpm), borderColor: '#3b82f6', borderWidth: 1.5, pointRadius: 0, yAxisID: 'yRPM' },
+                { label: 'Temp', data: data.logs.map(l => l.coolant_temp), borderColor: '#eab308', borderWidth: 1.5, pointRadius: 0, yAxisID: 'yStandard' },
+                { label: 'Fuel', data: data.logs.map(l => l.fuel_level), borderColor: '#ef4444', borderWidth: 1.5, pointRadius: 0, yAxisID: 'yStandard' },
+                { label: 'Vib', data: data.logs.map(l => l.vibration_delta_g), borderColor: '#a855f7', borderWidth: 1.5, pointRadius: 0, yAxisID: 'yStandard' }
+              ]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              scales: {
+                x: { ticks: { color: '#71717a' }, grid: { color: '#27272a' } },
+                yStandard: { type: 'linear', position: 'left', min: 0, max: 110, ticks: { color: '#71717a' }, grid: { color: '#27272a' } },
+                yRPM: { type: 'linear', position: 'right', min: 0, max: 2000, ticks: { color: '#3b82f6' }, grid: { drawOnChartArea: false } }
+              },
+              plugins: { legend: { display: false } }
+            }
+          });
+        }
+
+      } catch (err) {
+        if (content) content.innerHTML = `<p class="text-rose-400 p-4">Error loading modal logs: ${err}</p>`;
+      }
+    }
+
+    function exportSessionData(format) {
+      if (!currentInspectedSession || !currentInspectedSession.logs) {
+        alert("No session data available for export.");
+        return;
+      }
+
+      const sessionId = currentInspectedSession.session_summary.session_id;
+      let dataStr = "";
+      let filename = `session_${sessionId}_telemetry.${format}`;
+
+      if (format === 'json') {
+        dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(currentInspectedSession, null, 2));
+      } else if (format === 'csv') {
+        const headers = ["Timestamp", "RPM", "Coolant Temp (C)", "Fuel Level (%)", "Vibration Delta (g)", "Health Index (%)"];
+        const rows = currentInspectedSession.logs.map(l => [
+          `"${l.timestamp}"`,
+          l.rpm,
+          l.coolant_temp,
+          l.fuel_level,
+          l.vibration_delta_g,
+          l.health_index
+        ]);
+        
+        const csvContent = [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+        dataStr = "data:text/csv;charset=utf-8," + encodeURIComponent(csvContent);
+      }
+
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", filename);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+    }
+
+    function closeModal() {
+      const modal = document.getElementById('session-modal');
+      if (modal) modal.classList.add('hidden');
+      currentInspectedSession = null;
+      if (modalChartInstance) {
+        modalChartInstance.destroy();
+        modalChartInstance = null;
+      }
+    }
+
+    connectWebSocket();
+    fetchSessionHistory();
+  </script>
+</body>
+</html>
