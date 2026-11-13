@@ -16,7 +16,7 @@ from sklearn.ensemble import IsolationForest
 DB_FILE = "generator_data.db"
 MQTT_COMMAND_TOPIC = "generator/commands"
 
-# --- 1. DATABASE INIT & OPTIMIZATION ---
+# 1. DATABASE INIT & OPTIMIZATION
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -58,7 +58,7 @@ def init_db():
 
 init_db()
 
-# --- 2. GLOBAL ML ENGINE STATE & ATTRIBUTION ---
+#2. GLOBAL ML ENGINE STATE & ATTRIBUTION
 ml_model: Optional[IsolationForest] = None
 is_ml_trained: bool = False
 feature_means: Optional[np.ndarray] = None
@@ -105,7 +105,7 @@ def train_isolation_forest():
 
 train_isolation_forest()
 
-# --- 3. STATE & SESSION MANAGEMENT ---
+#3. STATE & SESSION MANAGEMENT
 main_event_loop = None
 active_session_id: Optional[int] = None
 session_start_time: Optional[float] = None
@@ -236,7 +236,7 @@ def trigger_actuator_shutdown(reason: str, manual: bool = False):
             main_event_loop
         )
 
-# --- 4. DIGITAL TWIN TELEMETRY PROCESSING ENGINE ---
+# 4. DIGITAL TWIN TELEMETRY PROCESSING ENGINE
 def process_digital_twin_logic(payload: dict):
     global twin_state, telemetry_history, last_mqtt_heartbeat, active_session_id
     alarms = []
@@ -248,7 +248,7 @@ def process_digital_twin_logic(payload: dict):
     vibration_delta_g = float(payload.get("vibration_delta_g", 0.0))
     now_timestamp = time.time()
 
-    # --- AUTOMATIC SESSION TERMINATION ON RPM == 0 ---
+    # AUTOMATIC SESSION TERMINATION ON RPM == 0
     if rpm == 0 and active_session_id is not None:
         closed_id = active_session_id
         close_active_session()
@@ -277,7 +277,7 @@ def process_digital_twin_logic(payload: dict):
     if fuel_burn_rate > 0:
         rufl_minutes = round(fuel_level / fuel_burn_rate, 1)
 
-    # --- AUTONOMOUS SHUTDOWN CONDITIONS EVALUATION ---
+    # AUTONOMOUS SHUTDOWN CONDITIONS EVALUATION 
     shutdown_triggered = False
     shutdown_reasons = []
 
@@ -315,7 +315,7 @@ def process_digital_twin_logic(payload: dict):
     if shutdown_triggered:
         trigger_actuator_shutdown(reason="; ".join(shutdown_reasons), manual=False)
 
-    # --- ML Anomaly Detection & Parameter Root-Cause Analysis ---
+    # ML Anomaly Detection & Parameter Root-Cause Analysis 
     anomaly_score = 0.0
     ml_health_deduction = 0.0
     anomaly_attribution = "Normal Operation"
@@ -406,7 +406,7 @@ def process_digital_twin_logic(payload: dict):
     if main_event_loop and main_event_loop.is_running():
         asyncio.run_coroutine_threadsafe(manager.broadcast(twin_state), main_event_loop)
 
-# --- 5. WATCHDOG TASK ---
+#5. WATCHDOG TASK
 async def connection_watchdog():
     """Sets status to OFFLINE and closes session if no telemetry received for 5 seconds."""
     global twin_state
@@ -430,7 +430,7 @@ def on_mqtt_message(client, userdata, msg):
 mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 mqtt_client.on_message = on_mqtt_message
 
-# --- 7. FASTAPI APPLICATION ENDPOINTS ---
+# 7. FASTAPI APPLICATION ENDPOINTS
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global main_event_loop
@@ -579,4 +579,3 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
 
-    #### Full Stop
